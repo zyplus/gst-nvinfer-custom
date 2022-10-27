@@ -2,6 +2,87 @@
 
 
 namespace extractornamespace {
+
+
+/* For CenterNetFacedetection */
+//extern "C"
+static std::vector<int> getIds(float *heatmap, int h, int w, float thresh)
+{
+	std::vector<int> ids;
+	for (int i = 0; i < h; ++i)
+	{
+		for (int j = 0; j < w; ++j)
+		{
+
+			//			std::cout<<"ids"<<heatmap[i*w+j]<<std::endl;
+			if (heatmap[i * w + j] > thresh)
+			{
+				//				std::array<int, 2> id = { i,j };
+				ids.push_back(i);
+				ids.push_back(j);
+				//	std::cout<<"print ids"<<i<<std::endl;
+			}
+		}
+	}
+	return ids;
+}
+
+static void nms(std::vector<FaceInfo> &input, std::vector<FaceInfo> &output, float nmsthreshold)
+{
+	std::sort(input.begin(), input.end(),
+			  [](const FaceInfo &a, const FaceInfo &b) {
+				  return a.score > b.score;
+			  });
+
+	int box_num = input.size();
+
+	std::vector<int> merged(box_num, 0);
+
+	for (int i = 0; i < box_num; i++)
+	{
+		if (merged[i])
+			continue;
+
+		output.push_back(input[i]);
+
+		float h0 = input[i].y2 - input[i].y1 + 1;
+		float w0 = input[i].x2 - input[i].x1 + 1;
+
+		float area0 = h0 * w0;
+
+		for (int j = i + 1; j < box_num; j++)
+		{
+			if (merged[j])
+				continue;
+
+			float inner_x0 = input[i].x1 > input[j].x1 ? input[i].x1 : input[j].x1; //std::max(input[i].x1, input[j].x1);
+			float inner_y0 = input[i].y1 > input[j].y1 ? input[i].y1 : input[j].y1;
+
+			float inner_x1 = input[i].x2 < input[j].x2 ? input[i].x2 : input[j].x2; //bug fixed ,sorry
+			float inner_y1 = input[i].y2 < input[j].y2 ? input[i].y2 : input[j].y2;
+
+			float inner_h = inner_y1 - inner_y0 + 1;
+			float inner_w = inner_x1 - inner_x0 + 1;
+
+			if (inner_h <= 0 || inner_w <= 0)
+				continue;
+
+			float inner_area = inner_h * inner_w;
+
+			float h1 = input[j].y2 - input[j].y1 + 1;
+			float w1 = input[j].x2 - input[j].x1 + 1;
+
+			float area1 = h1 * w1;
+
+			float score;
+
+			score = inner_area / (area0 + area1 - inner_area);
+
+			if (score > nmsthreshold)
+				merged[j] = 1;
+		}
+	}
+}
 class Extractor::Impl {
 public:
 	void facelmks(NvDsMetaList * l_user, std::vector<FaceInfo>& res);
@@ -31,7 +112,8 @@ void Extractor::facelmks(NvDsMetaList * l_user, std::vector<FaceInfo>& res) {
     return impl_->facelmks(l_user, res);
 }
 
-void Extractor::Impl::CenterFacelmks(std::vector<NvDsInferLayerInfo> const &outputLayersInfo, NvDsInferNetworkInfo &network_info, std::vector<FaceInfo>& res){
+void Extractor::Impl::CenterFacelmks(std::vector<NvDsInferLayerInfo> const &outputLayersInfo, 
+               NvDsInferNetworkInfo &network_info, std::vector<FaceInfo>& res){
             //Change the Extractor Using CenterNet
 
         auto layerFinder = [&outputLayersInfo](const std::string &name)
@@ -79,9 +161,43 @@ void Extractor::Impl::CenterFacelmks(std::vector<NvDsInferLayerInfo> const &outp
 	int width = networkInfo.width;
 	int height = networkInfo.height; 
 	int d_h = (int)(std::ceil(height / 32) * 32);
-	int d_w = (int)(std::ceil(width / 32) * 32);    
+	int d_w = (int)(std::ceil(width / 32) * 32); 
+    std::vector<FaceInfo> tmpVec;
+    for (int i = 0; i < ids.size() / 2; i++)
+	{
+		int id_h = ids[2 * i];
+		int id_w = ids[2 * i + 1];
+		int index = id_h * fea_w + id_w;
 
+		float s0 = std::exp(scale0[index]) * 4;
+		float s1 = std::exp(scale1[index]) * 4;
+		float o0 = offset0[index];
+		float o1 = offset1[index];
+		float x1 = std::max(0., (id_w + o1 + 0.5) * 4 - s1 / 2);
+		float y1 = std::max(0., (id_h + o0 + 0.5) * 4 - s0 / 2);
+		float x2 = 0, y2 = 0;
+		x1 = std::min(x1, (float)d_w);
+		y1 = std::min(y1, (float)d_h);
+		x2 = std::min(x1 + s1, (float)d_w);
+		y2 = std::min(y1 + s0, (float)d_h);
 
+		FaceInfo facebox;
+		facebox.bbox[0] = x1;
+		facebox.bbox[1] = y1;
+		facebox.bbox[2] = x2;
+		facebox.bbox[3] = y2;
+		facebox.score = heatmap_[index];
+		for (int j = 0; j < 5; j++)
+		{
+			facebox.anchor[2 * j] = x1 + lm[(2 * j + 1) * spacial_size + index] * s1;
+			facebox.anchor[2 * j + 1] = y1 + lm[(2 * j) * spacial_size + index] * s0;
+		}
+		//std::cout<<"face:"<<x1<<","<<y1<<"---------"<<x2<<","<<y2<<std::endl;
+		tmpVec.emplace_back(std::move(facebox));
+	}
+    const float threshold = 0.4;
+	nms(tmpVec, res, threshold);
+    
 }
 
 void Extractor::Impl::facelmks(NvDsMetaList * l_user, std::vector<FaceInfo>& res) {

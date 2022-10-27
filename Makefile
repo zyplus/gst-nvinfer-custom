@@ -8,7 +8,7 @@
 # license agreement from NVIDIA Corporation is strictly prohibited.
 #################################################################################
 
-CUDA_VER?=
+CUDA_VER?=11.4
 ifeq ($(CUDA_VER),)
   $(error "CUDA_VER is not set")
 endif
@@ -45,7 +45,7 @@ LIBS+= -L$(LIB_INSTALL_DIR) -lnvdsgst_helper -lnvdsgst_meta -lnvds_meta \
 
 OBJS:= $(SRCS:.cpp=.o)
 
-PKGS:= gstreamer-1.0 gstreamer-base-1.0 gstreamer-video-1.0 /usr/lib/x86_64-linux-gnu/pkgconfig/opencv4.pc
+PKGS:= gstreamer-1.0 gstreamer-base-1.0 gstreamer-video-1.0 /usr/lib/aarch64-linux-gnu/pkgconfig/opencv4.pc
 CFLAGS+=$(shell pkg-config --cflags $(PKGS))
 LIBS+=$(shell pkg-config --libs $(PKGS))
 
