@@ -31,6 +31,59 @@ void Extractor::facelmks(NvDsMetaList * l_user, std::vector<FaceInfo>& res) {
     return impl_->facelmks(l_user, res);
 }
 
+void Extractor::Impl::CenterFacelmks(std::vector<NvDsInferLayerInfo> const &outputLayersInfo, NvDsInferNetworkInfo &network_info, std::vector<FaceInfo>& res){
+            //Change the Extractor Using CenterNet
+
+        auto layerFinder = [&outputLayersInfo](const std::string &name)
+		-> const NvDsInferLayerInfo * {
+		for (auto &layer : outputLayersInfo)
+		{
+
+			if (layer.dataType == FLOAT &&
+				(layer.layerName && name == layer.layerName))
+			{
+				return &layer;
+			}
+		}
+		return nullptr;
+	};
+	const NvDsInferLayerInfo *heatmap = layerFinder("537");
+	const NvDsInferLayerInfo *scale = layerFinder("538");
+	const NvDsInferLayerInfo *offset = layerFinder("539");
+	const NvDsInferLayerInfo *landmarks = layerFinder("540");
+    if (!heatmap || !scale || !offset || !landmarks)
+	{
+		std::cerr << "ERROR: some layers missing or unsupported data types "
+				  << "in output tensors" << std::endl;
+		return false;
+	}
+
+	int fea_h = heatmap->inferDims.d[1];//; //#heatmap.size[2];
+	int fea_w = heatmap->inferDims.d[2];//;//heatmap.size[3];
+	int spacial_size = fea_h* fea_w;
+ 	// std::cout<<"features"<<fea_h<<"width"<<fea_w<<std::endl;
+	// std::cout<<"0:"<<heatmap->inferDims.d[0]<<"1:"<<heatmap->inferDims.d[1]<<std::endl;
+	float *heatmap_ = (float *)(heatmap->buffer);
+
+	float *scale0 = (float *)(scale->buffer);
+	float *scale1 = scale0 + spacial_size;
+
+	float *offset0 = (float *)(offset->buffer);
+	float *offset1 = offset0 + spacial_size;
+	float *lm = (float *)landmarks->buffer;
+
+	float scoreThresh = 0.5;
+	std::vector<int> ids = getIds(heatmap_, fea_h, fea_w, scoreThresh);
+	//?? d_w, d_h
+	//std::cerr<<"getids:"<<ids.size()<<std::endl;
+	int width = networkInfo.width;
+	int height = networkInfo.height; 
+	int d_h = (int)(std::ceil(height / 32) * 32);
+	int d_w = (int)(std::ceil(width / 32) * 32);    
+
+
+}
+
 void Extractor::Impl::facelmks(NvDsMetaList * l_user, std::vector<FaceInfo>& res) {
     static guint use_device_mem = 0;
     for (;l_user != NULL; l_user = l_user->next) { 
@@ -40,6 +93,8 @@ void Extractor::Impl::facelmks(NvDsMetaList * l_user, std::vector<FaceInfo>& res
         }
         /* convert to tensor metadata */
         NvDsInferTensorMeta *meta = (NvDsInferTensorMeta *) user_meta->user_meta_data;
+        CenterFacelmks(meta->output_layers_info, meta->network_info, res);
+
         NvDsInferLayerInfo *info = &meta->output_layers_info[0];
         info->buffer = meta->out_buf_ptrs_host[0];
         if (use_device_mem && meta->out_buf_ptrs_dev[0]) {
