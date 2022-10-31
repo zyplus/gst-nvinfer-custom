@@ -57,10 +57,10 @@ cv::Mat Aligner::AlignPlate(const cv::Mat & dst) {
 cv::Mat Aligner::Impl::AlignFace(const cv::Mat & dst) {
 	cv::Mat src(5,2,CV_32FC1, standard_face);
     memcpy(src.data, standard_face, 2 * 5 * sizeof(float));
-	// std::cout << "start align face." << std::endl;
+	std::cout << "start align face." << std::endl;
     cv::Mat M= SimilarTransform(dst, src);
-    // std::cout<<"M:  "<<M<<std::endl;
-    // std::cout << "end align face." << std::endl;
+    std::cout<<"M:  "<<M<<std::endl;
+    std::cout << "end align face." << std::endl;
 	return M;
 }
 

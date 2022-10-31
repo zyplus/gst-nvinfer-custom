@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cassert>
 #include <condition_variable>
+#include "cuda_runtime.h" 
 #include <memory>
 #include <mutex>
 #include <list>
@@ -81,6 +82,9 @@ extern const int DEFAULT_REINFER_INTERVAL = G_MAXINT;
   (DS_NVINFER_IMPL(nvinfer)->m_InitParams->networkType == NvDsInferNetworkType_InstanceSegmentation)
 
 static GQuark _dsmeta_quark = 0;
+
+#define INFERENCE_IMAGE_WIDTH (112)
+#define INFERENCE_IMAGE_HEIGHT (112)
 
 /* Gst-nvinfer supports runtime model updates. Refer to gstnvinfer_impl.h
  * for details. */
@@ -1257,6 +1261,7 @@ get_converted_buffer (GstNvInfer * nvinfer, NvBufSurface * src_surf,
     dest_width = nvinfer->network_width;
     dest_height = nvinfer->network_height;
   }
+  std::cout<<" Get dest width is "<<dest_width <<" height is "<<dest_height<<std::endl;
   /* Calculate the scaling ratio of the frame / object crop. This will be
    * required later for rescaling the detector output boxes to input resolution.
    */
@@ -1403,7 +1408,8 @@ should_trans_object(GstNvInfer * nvinfer)
 
 
 /* use similarTransform matrix to do warp perspective trans */
-// TODO:to crop a picture larger than 112 * 112 
+// TODO:to crop a picture larger than INFERENCE_IMAGE_WIDTH * INFERENCE_IMAGE_HEIGHT 
+static uint face_count;
 static void
 align_preprocess(NvBufSurface * surface, cv::Mat &M, int track_id, int align_type, int frame_num, float face[][2]){
   for (uint frameIndex = 0; frameIndex < surface->numFilled; frameIndex++) {
@@ -1415,49 +1421,93 @@ align_preprocess(NvBufSurface * surface, cv::Mat &M, int track_id, int align_typ
     if (src_data == NULL) {
       g_print("Error: failed to malloc src_data \n");
     }
+    NvBufSurfaceMap (surface, -1, -1, NVBUF_MAP_READ_WRITE);
+    NvBufSurfaceSyncForCpu (surface, frameIndex, 0);
+    // NvBufSurfacePlaneParams *pParams = &surface->surfaceList[frameIndex].planeParams;
+    // unsigned int offset = 0;
+    // for(unsigned int num_planes=0; num_planes < pParams->num_planes; num_planes++){
+    //     if(num_planes>0)
+    //         offset += pParams->height[num_planes-1]*(pParams->bytesPerPix[num_planes-1]*pParams->width[num_planes-1]);
+    //     for (unsigned int h = 0; h < pParams->height[num_planes]; h++) {
+    //       memcpy((void *)(src_data+offset+h*pParams->bytesPerPix[num_planes]*pParams->width[num_planes]),
+    //             (void *)((char *)surface->surfaceList[frameIndex].mappedAddr.addr[num_planes]+h*pParams->pitch[num_planes]),
+    //             pParams->bytesPerPix[num_planes]*pParams->width[num_planes]
+    //             );
+    //     }
+    // }
+
+    std::cout<<"get surface data size "<< surface->surfaceList[frameIndex].pitch << " frame inx is " << frameIndex<<
+    "width is " << frame_width<<" height is " <<frame_height << "type is "<<surface->memType << std::endl;
     //auto start = std::chrono::system_clock::now();
-    cudaMemcpy((void *)src_data,
+    #if 0
+    cudaError_t t;
+    t = cudaMemcpy((void *)src_data,
         (void *)surface->surfaceList[frameIndex].dataPtr,
         surface->surfaceList[frameIndex].dataSize,
         cudaMemcpyDeviceToHost);
-    //auto end = std::chrono::system_clock::now();
-    //std::cout << "d to H time usage:"<<std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "us" << std::endl;
-    size_t frame_step = surface->surfaceList[frameIndex].pitch;
-    // printf("all_bbox_generated called! colorformat =%d\n", surface->surfaceList[frameIndex].colorFormat);
-    cv::Mat frame = cv::Mat(frame_height, frame_width, CV_8UC3, src_data, frame_step);
+    if(t != CUDA_SUCCESS){
+       std::cout<<" Here " << cudaGetErrorString(t)<<std::endl;
+
+    }
+    auto end = std::chrono::system_clock::now();
+    #endif
+    // std::cout << "d to H time usage:"<<std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "us" << std::endl;
+    // size_t frame_step = surface->surfaceList[frameIndex].pitch;
+    printf("all_bbox_generated called! colorformat =%d\n", surface->surfaceList[frameIndex].colorFormat);
+    // cv::Mat frame = cv::Mat(frame_height, frame_width, CV_8UC4, src_data);
+    cv::Mat frame = cv::Mat (surface->surfaceList[frameIndex].planeParams.height[0],
+            surface->surfaceList[frameIndex].planeParams.width[0], CV_8UC4,
+            surface->surfaceList[frameIndex].mappedAddr.addr[0],
+            surface->surfaceList[frameIndex].planeParams.pitch[0]);
     cv::Mat out_mat = cv::Mat(cv::Size(frame_width, frame_height), CV_8UC3);
-    cv::cvtColor(frame, out_mat, CV_RGB2BGR);
+    cv::cvtColor(frame, out_mat, CV_RGBA2BGR);
     char yuv_name[100] = "";
     if (align_type == 1){
-      // draw landmark points
       // for(int i=0;i<5;i++){
       //   cv::Point centerCircle1(face[i][0], face[i][1]);
       //   int radiusCircle = 1;
-      //   cv::Scalar colorCircle1(0, 0, 255); // (B, G, R)
+      //   cv::Scalar colorCircle1(255, 255, 255); // (B, G, R)
       //   int thicknessCircle1 = 1;
       //   cv::circle(out_mat, centerCircle1, radiusCircle, colorCircle1, thicknessCircle1);
       // }
-      sprintf(yuv_name, "images/origin/face-%d.png", track_id);  
+      sprintf(yuv_name, "/nvidia/pic/face-%d.png", face_count++);  
     }
     else if (align_type == 2){
-      sprintf(yuv_name, "images/origin/plate-of-car-%d-frame-%d.png", track_id, frame_num); 
+      sprintf(yuv_name, "/nvidia/pic/plate-of-car-%d-frame-%d.png", track_id, frame_num); 
     }
-
-    cv::imwrite(yuv_name, out_mat); 
+    if(! cv::imwrite(yuv_name, out_mat)){
+      std::cout<<" save image failed!"<<std::endl;
+    }
 
     if (align_type == 1){
       cv::Mat transfer_mat = M(cv::Rect(0, 0, 3, 2));
-      cv::warpAffine(frame, frame, transfer_mat, cv::Size(112, 112), 1, 0, 0);
+      cv::warpAffine(frame, frame, transfer_mat, cv::Size(INFERENCE_IMAGE_WIDTH, INFERENCE_IMAGE_HEIGHT), 1, 0, 0);
     }
     else if (align_type == 2){
       cv::warpPerspective(frame, frame, M, cv::Size(94, 24),cv::INTER_LINEAR);
     }
-
-    size_t sizeInBytes = surface->surfaceList[frameIndex].dataSize;
-    cudaMemcpy((void *)surface->surfaceList[frameIndex].dataPtr,
-        frame.ptr(0),
-        sizeInBytes,
-        cudaMemcpyHostToDevice);   
+    cv::cvtColor(frame, out_mat, CV_RGBA2BGR);
+    if (align_type == 1){
+      for(int i=0;i<5;i++){
+        // cv::Point centerCircle1(face[i][0], face[i][1]);
+        // int radiusCircle = 1;
+        // cv::Scalar colorCircle1(255, 255, 255); // (B, G, R)
+        // int thicknessCircle1 = 1;
+        // cv::circle(out_mat, centerCircle1, radiusCircle, colorCircle1, thicknessCircle1);
+      }
+      sprintf(yuv_name, "/nvidia/pic/face-%d.png", face_count++);  
+    }
+    if(! cv::imwrite(yuv_name, out_mat)){
+      std::cout<<" save image failed!"<<std::endl;
+    }
+    
+    NvBufSurfaceSyncForDevice (surface, -1, -1);
+    NvBufSurfaceUnMap (surface, -1, -1);
+    // cudaMemcpy((void *)surface->surfaceList[frameIndex].dataPtr,
+    //     frame.ptr(0),
+    //     sizeInBytes,
+    //     cudaMemcpyHostToDevice);   
+    free(src_data);
   }
 }
 
@@ -1485,7 +1535,7 @@ check_trans(NvBufSurface * surface, int track_id, int frame_num){
     cv::Mat out_mat = cv::Mat(cv::Size(frame_width, frame_height), CV_8UC3);
     cv::cvtColor(frame, out_mat, CV_RGB2BGR);
     char yuv_name[100] = "";
-    sprintf(yuv_name, "images/aligned/alignment-%d.png", track_id, frame_num);  
+    sprintf(yuv_name, "images/aligned/alignment-%d-%d.png", track_id, frame_num);  
     cv::imwrite(yuv_name, out_mat); 
   }
 }
@@ -1563,12 +1613,12 @@ convert_batch_and_push_to_input_thread_face_alignment (GstNvInfer *nvinfer,
     return FALSE;
   }
 
-  // std::cout<<"******  "<<"Now do alignment on face of person-"<<object_meta->object_id<<"  ******"<<std::endl;
+  std::cout<<"******  "<<"Now do alignment on face of person-"<<object_meta->object_id<<"  ******"<<std::endl;
   cv::Mat dst(5,2,CV_32FC1, face);
-  memcpy(dst.data, face, 2 * 5 * sizeof(float));
+  // memcpy(dst.data, face, 2 * 5 * sizeof(float));
   cv::Mat M = nvinfer->aligner.AlignFace(dst);
   align_preprocess(mem->surf, M, object_meta->object_id, nvinfer->alignment, 0, face);
-  memset(face, 0, sizeof(face));
+  memset(face, 0, sizeof(float) * 2 * 5);
   //save mem->surf to check covering 
   check_trans(mem->surf, object_meta->object_id, 0);
     
@@ -2118,7 +2168,7 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
         ("NvDsBatchMeta not found for input buffer."), (NULL));
     return GST_FLOW_ERROR;
   }
-
+  int metaCount = 0;
   for (NvDsMetaList * l_frame = batch_meta->frame_meta_list; l_frame != NULL;
       l_frame = l_frame->next) {
     NvDsFrameMeta *frame_meta = (NvDsFrameMeta *) (l_frame->data);
@@ -2142,6 +2192,7 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
     if(nvinfer->user_meta == 1){
       if (frame_meta->num_obj_meta){
         NvDsMetaList * l_user = frame_meta->frame_user_meta_list;
+        std::cout<<"get Meta List "<<++metaCount << std::endl;
         if (nvinfer->alignment == 1){
           nvinfer->extractor.facelmks(l_user, face_res);
         }
@@ -2241,26 +2292,45 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
       }
 
       float face[5][2]={0};
+      // std::cout<<"get object confidence is " << object_meta->confidence<< std::endl;
       // float plate[4][2]={0};
+      std::cout<<"get object left " << object_meta->detector_bbox_info.org_bbox_coords.left
+      <<" "<<object_meta->detector_bbox_info.org_bbox_coords.top
+      <<" "<<object_meta->detector_bbox_info.org_bbox_coords.width
+      <<" "<<object_meta->detector_bbox_info.org_bbox_coords.height<<std::endl;
       for(auto& r : face_res) {
         // temporarily we use confidence to match the detections
         // TODO use bbox for matching
-        if(r.confidence==object_meta->confidence){
+        // std::cout<<"get r confidency is " << r.confidence << std::endl;
+        // if(r.confidence==object_meta->confidence){
+      std::cout<<"r object left " << r.bbox[0]
+      <<" "<<r.bbox[1]
+      <<" "<<r.bbox[2]-r.bbox[0]
+      <<" "<<r.bbox[3]-r.bbox[1]<<std::endl;
+        if(r.bbox[0]*(1920.0/1280) == object_meta->detector_bbox_info.org_bbox_coords.left &&
+           (r.bbox[2]-r.bbox[0]) *(1920.0/1280) == object_meta->detector_bbox_info.org_bbox_coords.width)
+        {
           float x_width = (r.bbox[2]-r.bbox[0]);
           float y_height = (r.bbox[3]-r.bbox[1]);
           for(uint i=0;i<5;i++) {
             //calculate the correct ratio to trans landmarks
-            face[i][0]=(r.landmark[i*2]  -r.bbox[0])/x_width*112;
-            face[i][1]=(r.landmark[i*2 + 1]  -r.bbox[1])/y_height*112;
-          }      
+            face[i][0]=(r.landmark[i*2]  -r.bbox[0])/x_width*INFERENCE_IMAGE_WIDTH;
+            face[i][1]=(r.landmark[i*2 + 1]  -r.bbox[1])/y_height*INFERENCE_IMAGE_HEIGHT;
+          }
+          std::cout<<"get in confidence match "<< x_width<<" " << y_height<< std::endl;  
+          std::cout<<"Face land mark 0 "<<face[0][0]<<" "<< face[0][1]<<" "
+          <<face[1][0]<<" "<< face[1][1]<<" "
+          <<face[2][0]<<" "<< face[2][1]<<" "
+          <<face[3][0]<<" "<< face[3][1]<<" "
+          <<face[4][0]<<" "<< face[4][1]<<" " <<std::endl;
         }
       }
       // if is not a front face, we will drop this
-      if (!is_front_face(face)){
-        memset(face, 0, sizeof(face));
-        std::cout<<"******  "<<"face-"<<object_meta->object_id<<" 不是正脸.  ******"<<std::endl;
-        continue;
-      }
+      // if (!is_front_face(face)){
+      //   memset(face, 0, sizeof(face));
+      //   std::cout<<"******  "<<"face-"<<object_meta->object_id<<" 不是正脸.  ******"<<std::endl;
+      //   continue;
+      // }
 
       /* Object has a valid tracking id but does not have any history. Create
        * an entry in the map for the object. */
@@ -2543,7 +2613,7 @@ gst_nvinfer_process_tensor_input (GstNvInfer * nvinfer, GstBuffer * inbuf,
       input_batch.returnInputFunc = nullptr;
 
       for (auto &tensor : tensors)
-        tensor.dims.d[0] = batch->frames.size();
+        tensor.inferDims.d[0] = batch->frames.size();
 
       NvDsInferStatus status =
           DS_NVINFER_IMPL (nvinfer)->m_InferCtx->

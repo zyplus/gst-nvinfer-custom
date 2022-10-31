@@ -16,6 +16,7 @@ static constexpr int LOCATIONS = 4;
 static constexpr int ANCHORS = 10;
 
 struct alignas(float) FaceInfo{
+	//center_x center_y w h
     float bbox[LOCATIONS];
     float score;
     float anchor[ANCHORS];
@@ -28,6 +29,7 @@ public:
 	~Extractor();
 
 	void facelmks(NvDsMetaList * l_user, std::vector<FaceInfo>& res);
+
 	// cv::Mat AlignPlate(const cv::Mat & src, const cv::Mat & dst);
 	
 private:
