@@ -1416,45 +1416,14 @@ align_preprocess(NvBufSurface * surface, cv::Mat &M, int track_id, int align_typ
     gint frame_width = (gint)surface->surfaceList[frameIndex].width;
     gint frame_height = (gint)surface->surfaceList[frameIndex].height;
 
-    void *src_data = NULL;
-    src_data = (char *)malloc(surface->surfaceList[frameIndex].dataSize);
-    if (src_data == NULL) {
-      g_print("Error: failed to malloc src_data \n");
-    }
     NvBufSurfaceMap (surface, -1, -1, NVBUF_MAP_READ_WRITE);
     NvBufSurfaceSyncForCpu (surface, frameIndex, 0);
-    // NvBufSurfacePlaneParams *pParams = &surface->surfaceList[frameIndex].planeParams;
-    // unsigned int offset = 0;
-    // for(unsigned int num_planes=0; num_planes < pParams->num_planes; num_planes++){
-    //     if(num_planes>0)
-    //         offset += pParams->height[num_planes-1]*(pParams->bytesPerPix[num_planes-1]*pParams->width[num_planes-1]);
-    //     for (unsigned int h = 0; h < pParams->height[num_planes]; h++) {
-    //       memcpy((void *)(src_data+offset+h*pParams->bytesPerPix[num_planes]*pParams->width[num_planes]),
-    //             (void *)((char *)surface->surfaceList[frameIndex].mappedAddr.addr[num_planes]+h*pParams->pitch[num_planes]),
-    //             pParams->bytesPerPix[num_planes]*pParams->width[num_planes]
-    //             );
-    //     }
-    // }
 
     std::cout<<"get surface data size "<< surface->surfaceList[frameIndex].pitch << " frame inx is " << frameIndex<<
     "width is " << frame_width<<" height is " <<frame_height << "type is "<<surface->memType << std::endl;
     //auto start = std::chrono::system_clock::now();
-    #if 0
-    cudaError_t t;
-    t = cudaMemcpy((void *)src_data,
-        (void *)surface->surfaceList[frameIndex].dataPtr,
-        surface->surfaceList[frameIndex].dataSize,
-        cudaMemcpyDeviceToHost);
-    if(t != CUDA_SUCCESS){
-       std::cout<<" Here " << cudaGetErrorString(t)<<std::endl;
 
-    }
-    auto end = std::chrono::system_clock::now();
-    #endif
-    // std::cout << "d to H time usage:"<<std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "us" << std::endl;
-    // size_t frame_step = surface->surfaceList[frameIndex].pitch;
     printf("all_bbox_generated called! colorformat =%d\n", surface->surfaceList[frameIndex].colorFormat);
-    // cv::Mat frame = cv::Mat(frame_height, frame_width, CV_8UC4, src_data);
     cv::Mat frame = cv::Mat (surface->surfaceList[frameIndex].planeParams.height[0],
             surface->surfaceList[frameIndex].planeParams.width[0], CV_8UC4,
             surface->surfaceList[frameIndex].mappedAddr.addr[0],
@@ -1486,27 +1455,21 @@ align_preprocess(NvBufSurface * surface, cv::Mat &M, int track_id, int align_typ
     else if (align_type == 2){
       cv::warpPerspective(frame, frame, M, cv::Size(94, 24),cv::INTER_LINEAR);
     }
-    cv::cvtColor(frame, out_mat, CV_RGBA2BGR);
-    if (align_type == 1){
-      for(int i=0;i<5;i++){
-        // cv::Point centerCircle1(face[i][0], face[i][1]);
-        // int radiusCircle = 1;
-        // cv::Scalar colorCircle1(255, 255, 255); // (B, G, R)
-        // int thicknessCircle1 = 1;
-        // cv::circle(out_mat, centerCircle1, radiusCircle, colorCircle1, thicknessCircle1);
-      }
-      sprintf(yuv_name, "/nvidia/pic/face-%d.png", face_count++);  
-    }
-    if(! cv::imwrite(yuv_name, out_mat)){
-      std::cout<<" save image failed!"<<std::endl;
-    }
-    
     NvBufSurfaceSyncForDevice (surface, -1, -1);
     NvBufSurfaceUnMap (surface, -1, -1);
-    // cudaMemcpy((void *)surface->surfaceList[frameIndex].dataPtr,
-    //     frame.ptr(0),
-    //     sizeInBytes,
-    //     cudaMemcpyHostToDevice);   
+    //Test if the data has write to the surface.
+    NvBufSurfaceMap (surface, -1, -1, NVBUF_MAP_READ_WRITE);
+    NvBufSurfaceSyncForCpu (surface, frameIndex, 0);
+    frame = cv::Mat (surface->surfaceList[frameIndex].planeParams.height[0],
+            surface->surfaceList[frameIndex].planeParams.width[0], CV_8UC4,
+            surface->surfaceList[frameIndex].mappedAddr.addr[0],
+            surface->surfaceList[frameIndex].planeParams.pitch[0]);
+    cv::cvtColor(frame, out_mat, CV_RGBA2BGR); 
+    if(! cv::imwrite(yuv_name, out_mat)){
+      std::cout<<" save image failed!"<<std::endl;
+    }   
+    NvBufSurfaceUnMap (surface, -1, -1);
+ 
     free(src_data);
   }
 }
