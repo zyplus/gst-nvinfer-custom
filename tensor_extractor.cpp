@@ -193,11 +193,11 @@ Extractor::~Extractor() {
 				 NvDsInferLayerInfo *info = &meta->output_layers_info[i];
 				 info->buffer = meta->out_buf_ptrs_host[i];
 				// std::cout<<"device is " <<meta->out_buf_ptrs_dev[i]<<std::endl;
-				if(meta->out_buf_ptrs_dev[i]){
-					cudaMemcpy (meta->out_buf_ptrs_host[i], meta->out_buf_ptrs_dev[i],
-                  info->inferDims.numElements * 4, cudaMemcpyDeviceToHost);
+				// if(meta->out_buf_ptrs_dev[i]){
+				// 	cudaMemcpy (meta->out_buf_ptrs_host[i], meta->out_buf_ptrs_dev[i],
+                //   info->inferDims.numElements * 4, cudaMemcpyDeviceToHost);
 
-				}
+				// }
 			}
 			std::vector<NvDsInferLayerInfo > layerInfoVec(meta->output_layers_info,
                             meta->output_layers_info + meta->num_output_layers);

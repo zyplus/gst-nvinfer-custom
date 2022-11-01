@@ -149,6 +149,9 @@ static void gst_nvinfer_reset_init_params (GstNvInfer * nvinfer);
 /* Create enum type for the process mode property. */
 #define GST_TYPE_NVDSINFER_PROCESS_MODE (gst_nvinfer_process_mode_get_type ())
 
+static float face[2000][2]={0};
+static uint face_count = 0;
+
 static GType
 gst_nvinfer_process_mode_get_type (void)
 {
@@ -1261,7 +1264,6 @@ get_converted_buffer (GstNvInfer * nvinfer, NvBufSurface * src_surf,
     dest_width = nvinfer->network_width;
     dest_height = nvinfer->network_height;
   }
-  std::cout<<" Get dest width is "<<dest_width <<" height is "<<dest_height<<std::endl;
   /* Calculate the scaling ratio of the frame / object crop. This will be
    * required later for rescaling the detector output boxes to input resolution.
    */
@@ -1409,15 +1411,18 @@ should_trans_object(GstNvInfer * nvinfer)
 
 /* use similarTransform matrix to do warp perspective trans */
 // TODO:to crop a picture larger than INFERENCE_IMAGE_WIDTH * INFERENCE_IMAGE_HEIGHT 
-static uint face_count;
+static uint inter_face_count;
 static void
-align_preprocess(NvBufSurface * surface, cv::Mat &M, int track_id, int align_type, int frame_num, float face[][2]){
+align_preprocess(NvBufSurface * surface,GstNvInfer *nvinfer, int track_id, int align_type, int frame_num, float face[][2]){
   for (uint frameIndex = 0; frameIndex < surface->numFilled; frameIndex++) {
     gint frame_width = (gint)surface->surfaceList[frameIndex].width;
     gint frame_height = (gint)surface->surfaceList[frameIndex].height;
 
     NvBufSurfaceMap (surface, -1, -1, NVBUF_MAP_READ_WRITE);
     NvBufSurfaceSyncForCpu (surface, frameIndex, 0);
+
+    cv::Mat dst(5,2,CV_32FC1, face+frameIndex*5);
+    cv::Mat M = nvinfer->aligner.AlignFace(dst);
 
     std::cout<<"get surface data size "<< surface->surfaceList[frameIndex].pitch << " frame inx is " << frameIndex<<
     "width is " << frame_width<<" height is " <<frame_height << "type is "<<surface->memType << std::endl;
@@ -1432,14 +1437,14 @@ align_preprocess(NvBufSurface * surface, cv::Mat &M, int track_id, int align_typ
     cv::cvtColor(frame, out_mat, CV_RGBA2BGR);
     char yuv_name[100] = "";
     if (align_type == 1){
-      // for(int i=0;i<5;i++){
-      //   cv::Point centerCircle1(face[i][0], face[i][1]);
-      //   int radiusCircle = 1;
-      //   cv::Scalar colorCircle1(255, 255, 255); // (B, G, R)
-      //   int thicknessCircle1 = 1;
-      //   cv::circle(out_mat, centerCircle1, radiusCircle, colorCircle1, thicknessCircle1);
-      // }
-      sprintf(yuv_name, "/nvidia/pic/face-%d.png", face_count++);  
+      for(int i=0;i<5;i++){
+        cv::Point centerCircle1(face[i][0], face[i][1]);
+        int radiusCircle = 1;
+        cv::Scalar colorCircle1(255, 255, 255); // (B, G, R)
+        int thicknessCircle1 = 1;
+        cv::circle(out_mat, centerCircle1, radiusCircle, colorCircle1, thicknessCircle1);
+      }
+      sprintf(yuv_name, "/nvidia/pic/face-%d.png", inter_face_count++);  
     }
     else if (align_type == 2){
       sprintf(yuv_name, "/nvidia/pic/plate-of-car-%d-frame-%d.png", track_id, frame_num); 
@@ -1465,12 +1470,11 @@ align_preprocess(NvBufSurface * surface, cv::Mat &M, int track_id, int align_typ
             surface->surfaceList[frameIndex].mappedAddr.addr[0],
             surface->surfaceList[frameIndex].planeParams.pitch[0]);
     cv::cvtColor(frame, out_mat, CV_RGBA2BGR); 
+    sprintf(yuv_name, "/nvidia/pic/face-%d_align.png", inter_face_count++); 
     if(! cv::imwrite(yuv_name, out_mat)){
       std::cout<<" save image failed!"<<std::endl;
     }   
     NvBufSurfaceUnMap (surface, -1, -1);
- 
-    free(src_data);
   }
 }
 
@@ -1577,14 +1581,13 @@ convert_batch_and_push_to_input_thread_face_alignment (GstNvInfer *nvinfer,
   }
 
   std::cout<<"******  "<<"Now do alignment on face of person-"<<object_meta->object_id<<"  ******"<<std::endl;
-  cv::Mat dst(5,2,CV_32FC1, face);
-  // memcpy(dst.data, face, 2 * 5 * sizeof(float));
-  cv::Mat M = nvinfer->aligner.AlignFace(dst);
-  align_preprocess(mem->surf, M, object_meta->object_id, nvinfer->alignment, 0, face);
-  memset(face, 0, sizeof(float) * 2 * 5);
+  // cv::Mat dst(5,2,CV_32FC1, face);
+  // cv::Mat M = nvinfer->aligner.AlignFace(dst);
+  align_preprocess(mem->surf,nvinfer, object_meta->object_id, nvinfer->alignment, 0, face);
+  // memset(face, 0, sizeof(float) * 2 * 5);
   //save mem->surf to check covering 
-  check_trans(mem->surf, object_meta->object_id, 0);
-    
+  // check_trans(mem->surf, object_meta->object_id, 0);
+  face_count = 0;  
   LockGMutex locker (nvinfer->process_lock);
   /* Push the batch info structure in the processing queue and notify the output
    * thread that a new batch has been queued. */
@@ -2110,6 +2113,7 @@ should_infer_object (GstNvInfer * nvinfer, GstBuffer * inbuf,
  * in the output loop. After the results are available the new/updated results
  * are attached (in the input thread) to the object whenever it is found in the
  * frame again. */
+
 static GstFlowReturn
 gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
     NvBufSurface * in_surf)
@@ -2254,7 +2258,6 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
         continue;
       }
 
-      float face[5][2]={0};
       // std::cout<<"get object confidence is " << object_meta->confidence<< std::endl;
       // float plate[4][2]={0};
       std::cout<<"get object left " << object_meta->detector_bbox_info.org_bbox_coords.left
@@ -2277,15 +2280,16 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
           float y_height = (r.bbox[3]-r.bbox[1]);
           for(uint i=0;i<5;i++) {
             //calculate the correct ratio to trans landmarks
-            face[i][0]=(r.landmark[i*2]  -r.bbox[0])/x_width*INFERENCE_IMAGE_WIDTH;
-            face[i][1]=(r.landmark[i*2 + 1]  -r.bbox[1])/y_height*INFERENCE_IMAGE_HEIGHT;
+            face[face_count*5 + i][0]=(r.landmark[i*2]  -r.bbox[0])/x_width*INFERENCE_IMAGE_WIDTH;
+            face[face_count*5+i][1]=(r.landmark[i*2 + 1]  -r.bbox[1])/y_height*INFERENCE_IMAGE_HEIGHT;
           }
           std::cout<<"get in confidence match "<< x_width<<" " << y_height<< std::endl;  
-          std::cout<<"Face land mark 0 "<<face[0][0]<<" "<< face[0][1]<<" "
-          <<face[1][0]<<" "<< face[1][1]<<" "
-          <<face[2][0]<<" "<< face[2][1]<<" "
-          <<face[3][0]<<" "<< face[3][1]<<" "
-          <<face[4][0]<<" "<< face[4][1]<<" " <<std::endl;
+          std::cout<<"Face land mark  "<<face[face_count*5 + 0][0]<<" "<< face[face_count*5 + 0][1]<<" "
+          <<face[face_count*5 + 1][0]<<" "<< face[face_count*5 + 1][1]<<" "
+          <<face[face_count*5 + 2][0]<<" "<< face[face_count*5 + 2][1]<<" "
+          <<face[face_count*5 + 3][0]<<" "<< face[face_count*5 + 3][1]<<" "
+          <<face[face_count*5 + 4][0]<<" "<< face[face_count*5 + 4][1]<<" " <<std::endl;
+          face_count++;
         }
       }
       // if is not a front face, we will drop this
@@ -2381,8 +2385,11 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
       }
 
       /* Submit batch if the batch size has reached max_batch_size. */
+      std::cout<<"get batch size "<<batch->frames.size() << " max batch size "<<nvinfer->max_batch_size<<std::endl;
       if (batch->frames.size () == nvinfer->max_batch_size && nvinfer->alignment==1) {
-        if (!convert_batch_and_push_to_input_thread_face_alignment (nvinfer, batch.get(), memory, frame_meta, object_meta, &object_meta->rect_params, face)) {
+        std::cout << "get face count is "<<face_count<<std::endl;
+        if (!convert_batch_and_push_to_input_thread_face_alignment (nvinfer, batch.get(), memory, frame_meta, object_meta, 
+        &object_meta->rect_params, face+5*(face_count -nvinfer->max_batch_size))) {
           return GST_FLOW_ERROR;
         }
         /* Batch submitted. Set batch to nullptr so that a new GstNvInferBatch
