@@ -65,7 +65,6 @@ Extractor::~Extractor() {
 										 NvDsInferNetworkInfo &network_info, std::vector<FaceInfo> &res)
 	{
 		// Change the Extractor Using CenterNet
- 
 		auto layerFinder = [&outputLayersInfo](const std::string &name)
 			-> const NvDsInferLayerInfo *
 		{
@@ -177,12 +176,15 @@ Extractor::~Extractor() {
 
 	void Extractor::Impl::facelmks(NvDsMetaList *l_user, std::vector<FaceInfo> &res)
 	{
-		static guint use_device_mem = 0;
+
+		// int user_data_count = 0;
 		for (; l_user != NULL; l_user = l_user->next)
 		{
+			// std::cout <<"user_data_count "<<user_data_count++<<std::endl;
 			NvDsUserMeta *user_meta = (NvDsUserMeta *)l_user->data;
 			if (user_meta->base_meta.meta_type != NVDSINFER_TENSOR_OUTPUT_META)
 			{
+				std::cout<<" User _meta type is "<<user_meta->base_meta.meta_type<<std::endl;
 				continue;
 			}
 			/* convert to tensor metadata */
@@ -202,9 +204,14 @@ Extractor::~Extractor() {
 			std::vector<NvDsInferLayerInfo > layerInfoVec(meta->output_layers_info,
                             meta->output_layers_info + meta->num_output_layers);
 			CenterFacelmks(layerInfoVec, meta->network_info, temp);
-			std::cout<<"get temp count "<<temp.size()<<std::endl;
-			nms_and_adapt(temp, res, NMS_THRESH, meta->network_info.width, meta->network_info.height);
-			std::cout<<"get res count "<<res.size()<<std::endl;
+			// std::cout<<"get temp count "<<temp.size()<<std::endl;
+			std::vector<FaceInfo> tmpres;
+			nms_and_adapt(temp, tmpres, NMS_THRESH, meta->network_info.width, meta->network_info.height);
+			for (auto& value: tmpres) {
+				res.emplace_back(std::move(value)); 
+			}
+			    
+			// std::cout<<"get res count "<<res.size()<<std::endl;
 			
 		}
 	}
@@ -247,7 +254,7 @@ Extractor::~Extractor() {
 			}
 		}
 		// crop larger area for better alignment performance
-		// there I choose to crop 50 more pixel
+		// there I choose to crop 20 more pixel
 		// std::cout<<"res 1 count " << res.size()<<std::endl;
 		for (unsigned int m = 0; m < res.size(); ++m)
 		{

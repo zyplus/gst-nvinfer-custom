@@ -149,9 +149,6 @@ static void gst_nvinfer_reset_init_params (GstNvInfer * nvinfer);
 /* Create enum type for the process mode property. */
 #define GST_TYPE_NVDSINFER_PROCESS_MODE (gst_nvinfer_process_mode_get_type ())
 
-static float face[2000][2]={0};
-static uint face_count = 0;
-
 static GType
 gst_nvinfer_process_mode_get_type (void)
 {
@@ -1413,7 +1410,7 @@ should_trans_object(GstNvInfer * nvinfer)
 // TODO:to crop a picture larger than INFERENCE_IMAGE_WIDTH * INFERENCE_IMAGE_HEIGHT 
 static uint inter_face_count;
 static void
-align_preprocess(NvBufSurface * surface,GstNvInfer *nvinfer, int track_id, int align_type, int frame_num, float face[][2]){
+align_preprocess(NvBufSurface * surface,GstNvInfer *nvinfer, int align_type, int frame_num, float face[][2]){
   for (uint frameIndex = 0; frameIndex < surface->numFilled; frameIndex++) {
     gint frame_width = (gint)surface->surfaceList[frameIndex].width;
     gint frame_height = (gint)surface->surfaceList[frameIndex].height;
@@ -1423,7 +1420,7 @@ align_preprocess(NvBufSurface * surface,GstNvInfer *nvinfer, int track_id, int a
 
     cv::Mat dst(5,2,CV_32FC1, face+frameIndex*5);
     cv::Mat M = nvinfer->aligner.AlignFace(dst);
-
+    
     std::cout<<"get surface data size "<< surface->surfaceList[frameIndex].pitch << " frame inx is " << frameIndex<<
     "width is " << frame_width<<" height is " <<frame_height << "type is "<<surface->memType << std::endl;
     //auto start = std::chrono::system_clock::now();
@@ -1433,25 +1430,25 @@ align_preprocess(NvBufSurface * surface,GstNvInfer *nvinfer, int track_id, int a
             surface->surfaceList[frameIndex].planeParams.width[0], CV_8UC4,
             surface->surfaceList[frameIndex].mappedAddr.addr[0],
             surface->surfaceList[frameIndex].planeParams.pitch[0]);
-    cv::Mat out_mat = cv::Mat(cv::Size(frame_width, frame_height), CV_8UC3);
-    cv::cvtColor(frame, out_mat, CV_RGBA2BGR);
-    char yuv_name[100] = "";
+    // cv::Mat out_mat = cv::Mat(cv::Size(frame_width, frame_height), CV_8UC3);
+    // cv::cvtColor(frame, out_mat, CV_RGBA2BGR);
+    // char yuv_name[100] = "";
     if (align_type == 1){
-      for(int i=0;i<5;i++){
-        cv::Point centerCircle1(face[i][0], face[i][1]);
-        int radiusCircle = 1;
-        cv::Scalar colorCircle1(255, 255, 255); // (B, G, R)
-        int thicknessCircle1 = 1;
-        cv::circle(out_mat, centerCircle1, radiusCircle, colorCircle1, thicknessCircle1);
-      }
-      sprintf(yuv_name, "/nvidia/pic/face-%d.png", inter_face_count++);  
+      // for(int i=0;i<5;i++){
+      //   cv::Point centerCircle1(face[frameIndex*5+i][0], face[frameIndex*5+i][1]);
+      //   int radiusCircle = 1;
+      //   cv::Scalar colorCircle1(255, 255, 255); // (B, G, R)
+      //   int thicknessCircle1 = 1;
+      //   cv::circle(out_mat, centerCircle1, radiusCircle, colorCircle1, thicknessCircle1);
+      // }
+      // sprintf(yuv_name, "/nvidia/pic/face-%d.png", inter_face_count++);  
     }
-    else if (align_type == 2){
-      sprintf(yuv_name, "/nvidia/pic/plate-of-car-%d-frame-%d.png", track_id, frame_num); 
-    }
-    if(! cv::imwrite(yuv_name, out_mat)){
-      std::cout<<" save image failed!"<<std::endl;
-    }
+    // else if (align_type == 2){
+      // sprintf(yuv_name, "/nvidia/pic/plate-of-car-%d-frame-%d.png", 1, frame_num); 
+    // }
+    // if(! cv::imwrite(yuv_name, out_mat)){
+    //   std::cout<<" save image failed!"<<std::endl;
+    // }
 
     if (align_type == 1){
       cv::Mat transfer_mat = M(cv::Rect(0, 0, 3, 2));
@@ -1463,18 +1460,18 @@ align_preprocess(NvBufSurface * surface,GstNvInfer *nvinfer, int track_id, int a
     NvBufSurfaceSyncForDevice (surface, -1, -1);
     NvBufSurfaceUnMap (surface, -1, -1);
     //Test if the data has write to the surface.
-    NvBufSurfaceMap (surface, -1, -1, NVBUF_MAP_READ_WRITE);
-    NvBufSurfaceSyncForCpu (surface, frameIndex, 0);
-    frame = cv::Mat (surface->surfaceList[frameIndex].planeParams.height[0],
-            surface->surfaceList[frameIndex].planeParams.width[0], CV_8UC4,
-            surface->surfaceList[frameIndex].mappedAddr.addr[0],
-            surface->surfaceList[frameIndex].planeParams.pitch[0]);
-    cv::cvtColor(frame, out_mat, CV_RGBA2BGR); 
-    sprintf(yuv_name, "/nvidia/pic/face-%d_align.png", inter_face_count++); 
-    if(! cv::imwrite(yuv_name, out_mat)){
-      std::cout<<" save image failed!"<<std::endl;
-    }   
-    NvBufSurfaceUnMap (surface, -1, -1);
+    // NvBufSurfaceMap (surface, -1, -1, NVBUF_MAP_READ_WRITE);
+    // NvBufSurfaceSyncForCpu (surface, frameIndex, 0);
+    // frame = cv::Mat (surface->surfaceList[frameIndex].planeParams.height[0],
+    //         surface->surfaceList[frameIndex].planeParams.width[0], CV_8UC4,
+    //         surface->surfaceList[frameIndex].mappedAddr.addr[0],
+    //         surface->surfaceList[frameIndex].planeParams.pitch[0]);
+    // cv::cvtColor(frame, out_mat, CV_RGBA2BGR); 
+    // sprintf(yuv_name, "/nvidia/pic/face-%d_align.png", inter_face_count++); 
+    // if(! cv::imwrite(yuv_name, out_mat)){
+    //   std::cout<<" save image failed!"<<std::endl;
+    // }   
+    // NvBufSurfaceUnMap (surface, -1, -1);
   }
 }
 
@@ -1537,8 +1534,7 @@ is_front_face(float face[][2]){
 
 static gboolean
 convert_batch_and_push_to_input_thread_face_alignment (GstNvInfer *nvinfer,
-    GstNvInferBatch *batch, GstNvInferMemory *mem, NvDsFrameMeta *frame_meta, 
-    NvDsObjectMeta *object_meta, NvOSD_RectParams * crop_rect_params, float face[][2])
+    GstNvInferBatch *batch, GstNvInferMemory *mem, float face[][2])
 {
   NvBufSurfTransform_Error err = NvBufSurfTransformError_Success;
   std::string nvtx_str;
@@ -1580,14 +1576,13 @@ convert_batch_and_push_to_input_thread_face_alignment (GstNvInfer *nvinfer,
     return FALSE;
   }
 
-  std::cout<<"******  "<<"Now do alignment on face of person-"<<object_meta->object_id<<"  ******"<<std::endl;
+  std::cout<<"******  "<<"Now do alignment on face of person"<<"  ******"<<std::endl;
   // cv::Mat dst(5,2,CV_32FC1, face);
   // cv::Mat M = nvinfer->aligner.AlignFace(dst);
-  align_preprocess(mem->surf,nvinfer, object_meta->object_id, nvinfer->alignment, 0, face);
+  align_preprocess(mem->surf,nvinfer, nvinfer->alignment, 0, face);
   // memset(face, 0, sizeof(float) * 2 * 5);
   //save mem->surf to check covering 
-  // check_trans(mem->surf, object_meta->object_id, 0);
-  face_count = 0;  
+  // check_trans(mem->surf, object_meta->object_id, 0); 
   LockGMutex locker (nvinfer->process_lock);
   /* Push the batch info structure in the processing queue and notify the output
    * thread that a new batch has been queued. */
@@ -2128,6 +2123,8 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
   std::vector<FaceInfo>  face_res;
   std::vector<PlateInfo> plate_res;
   bool lmk_flag = false;
+  float face[2000][2];
+  uint face_count = 0;
 
   NvDsBatchMeta *batch_meta = gst_buffer_get_nvds_batch_meta (inbuf);
   if (batch_meta == nullptr) {
@@ -2159,7 +2156,7 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
     if(nvinfer->user_meta == 1){
       if (frame_meta->num_obj_meta){
         NvDsMetaList * l_user = frame_meta->frame_user_meta_list;
-        std::cout<<"get Meta List "<<++metaCount << std::endl;
+        std::cout<<"get Meta List "<<++metaCount <<"meta count is  " << frame_meta->num_obj_meta <<std::endl;
         if (nvinfer->alignment == 1){
           nvinfer->extractor.facelmks(l_user, face_res);
         }
@@ -2260,19 +2257,19 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
 
       // std::cout<<"get object confidence is " << object_meta->confidence<< std::endl;
       // float plate[4][2]={0};
-      std::cout<<"get object left " << object_meta->detector_bbox_info.org_bbox_coords.left
-      <<" "<<object_meta->detector_bbox_info.org_bbox_coords.top
-      <<" "<<object_meta->detector_bbox_info.org_bbox_coords.width
-      <<" "<<object_meta->detector_bbox_info.org_bbox_coords.height<<std::endl;
+      // std::cout<<"get object left " << object_meta->detector_bbox_info.org_bbox_coords.left
+      // <<" "<<object_meta->detector_bbox_info.org_bbox_coords.top
+      // <<" "<<object_meta->detector_bbox_info.org_bbox_coords.width
+      // <<" "<<object_meta->detector_bbox_info.org_bbox_coords.height<<std::endl;
       for(auto& r : face_res) {
         // temporarily we use confidence to match the detections
         // TODO use bbox for matching
         // std::cout<<"get r confidency is " << r.confidence << std::endl;
         // if(r.confidence==object_meta->confidence){
-      std::cout<<"r object left " << r.bbox[0]
-      <<" "<<r.bbox[1]
-      <<" "<<r.bbox[2]-r.bbox[0]
-      <<" "<<r.bbox[3]-r.bbox[1]<<std::endl;
+      // std::cout<<"r object left " << r.bbox[0]
+      // <<" "<<r.bbox[1]
+      // <<" "<<r.bbox[2]-r.bbox[0]
+      // <<" "<<r.bbox[3]-r.bbox[1]<<std::endl;
         if(r.bbox[0]*(1920.0/1280) == object_meta->detector_bbox_info.org_bbox_coords.left &&
            (r.bbox[2]-r.bbox[0]) *(1920.0/1280) == object_meta->detector_bbox_info.org_bbox_coords.width)
         {
@@ -2283,13 +2280,14 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
             face[face_count*5 + i][0]=(r.landmark[i*2]  -r.bbox[0])/x_width*INFERENCE_IMAGE_WIDTH;
             face[face_count*5+i][1]=(r.landmark[i*2 + 1]  -r.bbox[1])/y_height*INFERENCE_IMAGE_HEIGHT;
           }
-          std::cout<<"get in confidence match "<< x_width<<" " << y_height<< std::endl;  
-          std::cout<<"Face land mark  "<<face[face_count*5 + 0][0]<<" "<< face[face_count*5 + 0][1]<<" "
-          <<face[face_count*5 + 1][0]<<" "<< face[face_count*5 + 1][1]<<" "
-          <<face[face_count*5 + 2][0]<<" "<< face[face_count*5 + 2][1]<<" "
-          <<face[face_count*5 + 3][0]<<" "<< face[face_count*5 + 3][1]<<" "
-          <<face[face_count*5 + 4][0]<<" "<< face[face_count*5 + 4][1]<<" " <<std::endl;
+          // std::cout<<"get in confidence match "<< x_width<<" " << y_height<< std::endl;  
+          // std::cout<<"Face land mark  "<<face[face_count*5 + 0][0]<<" "<< face[face_count*5 + 0][1]<<" "
+          // <<face[face_count*5 + 1][0]<<" "<< face[face_count*5 + 1][1]<<" "
+          // <<face[face_count*5 + 2][0]<<" "<< face[face_count*5 + 2][1]<<" "
+          // <<face[face_count*5 + 3][0]<<" "<< face[face_count*5 + 3][1]<<" "
+          // <<face[face_count*5 + 4][0]<<" "<< face[face_count*5 + 4][1]<<" " <<std::endl;
           face_count++;
+          break;
         }
       }
       // if is not a front face, we will drop this
@@ -2385,13 +2383,14 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
       }
 
       /* Submit batch if the batch size has reached max_batch_size. */
-      std::cout<<"get batch size "<<batch->frames.size() << " max batch size "<<nvinfer->max_batch_size<<std::endl;
+      std::cout<<"get batch size "<<batch->frames.size() << " max batch size "<<nvinfer->max_batch_size<<" face count is " <<face_count<<std::endl;
       if (batch->frames.size () == nvinfer->max_batch_size && nvinfer->alignment==1) {
         std::cout << "get face count is "<<face_count<<std::endl;
-        if (!convert_batch_and_push_to_input_thread_face_alignment (nvinfer, batch.get(), memory, frame_meta, object_meta, 
-        &object_meta->rect_params, face+5*(face_count -nvinfer->max_batch_size))) {
+        if (!convert_batch_and_push_to_input_thread_face_alignment (nvinfer, batch.get(), memory,  
+         face)) {
           return GST_FLOW_ERROR;
         }
+        face_count = 0;
         /* Batch submitted. Set batch to nullptr so that a new GstNvInferBatch
         * structure can be allocated if required. */
         batch.release ();
@@ -2427,10 +2426,21 @@ gst_nvinfer_process_objects (GstNvInfer * nvinfer, GstBuffer * inbuf,
      * have been deferred for classification metadata attachment. Return
      * intermediate memory to pool. */
     if (batch->frames.size() == 0)
-      gst_buffer_unref (batch->conv_buf);
-
-    if (!convert_batch_and_push_to_input_thread (nvinfer, batch.get(), memory)) {
-      return GST_FLOW_ERROR;
+      gst_buffer_unref(batch->conv_buf);
+    if (nvinfer->alignment == 1)
+    {
+      if (!convert_batch_and_push_to_input_thread_face_alignment (nvinfer, batch.get(), memory,  
+         face)) {
+          return GST_FLOW_ERROR;
+        }
+        face_count = 0;
+    }
+    else
+    {
+      if (!convert_batch_and_push_to_input_thread(nvinfer, batch.get(), memory))
+      {
+        return GST_FLOW_ERROR;
+      }
     }
     conv_gst_buf = nullptr;
     batch.release ();
