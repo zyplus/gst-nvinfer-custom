@@ -107,7 +107,7 @@ Extractor::~Extractor() {
 		float scoreThresh = 0.5;
 		std::vector<int> ids = getIds(heatmap_, fea_h, fea_w, scoreThresh);
 		//?? d_w, d_h
-		std::cout<<"getids:"<<ids.size()<<std::endl;
+		// std::cout<<"getids:"<<ids.size()<<std::endl;
 		int width = network_info.width;
 		int height = network_info.height;
 		int d_h = (int)(std::ceil(height / 32) * 32);
